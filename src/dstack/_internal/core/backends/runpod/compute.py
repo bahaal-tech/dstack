@@ -88,9 +88,7 @@ class RunpodCompute(Compute):
             network_volume_id = volumes[0].volume_id
             volume_mount_path = run.run_spec.configuration.volumes[0].path
 
-        container_registry_auth_id = self._generate_container_registry_auth_id(
-            job.job_spec.registry_auth
-        )
+        container_registry_auth_id = job.job_spec.env.get("runpod_container_registry_auth_id")
         resp = self.api_client.create_pod(
             name=instance_config.instance_name,
             image_name=job.job_spec.image_name,
@@ -128,7 +126,7 @@ class RunpodCompute(Compute):
             or self._last_cleanup_time
             < get_current_datetime() - timedelta(seconds=CONTAINER_REGISTRY_AUTH_CLEANUP_INTERVAL)
         ):
-            self._clean_stale_container_registry_auths()
+            # self._clean_stale_container_registry_auths()
             self._last_cleanup_time = get_current_datetime()
 
         return JobProvisioningData(
