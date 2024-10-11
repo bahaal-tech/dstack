@@ -93,7 +93,7 @@ class RunpodCompute(Compute):
             name=instance_config.instance_name,
             image_name=job.job_spec.image_name,
             gpu_type_id=instance_offer.instance.name,
-            cloud_type="ALL",  # ["ALL", "COMMUNITY", "SECURE"]:
+            cloud_type="SECURE",  # ["ALL", "COMMUNITY", "SECURE"]:
             data_center_id=instance_offer.region,
             gpu_count=len(instance_offer.instance.resources.gpus),
             container_disk_in_gb=disk_size,
