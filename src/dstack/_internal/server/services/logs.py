@@ -294,8 +294,39 @@ class CloudWatchLogStorage(LogStorage):
     ) -> _CloudWatchLogEvent:
         return {
             "timestamp": runner_log_event.timestamp,
-            "message": _b64encode_raw_message(runner_log_event.message),
+            "message": _decode_or_encode_message(runner_log_event.message),
         }
+
+    def _decode_or_encode_message(message: bytes) -> str:
+        """
+        Attempts to decode bytes as UTF-8. Only falls back to base64 encoding if UTF-8 decoding fails.
+        Also truncates messages that would exceed CloudWatch size limits.
+        
+        Args:
+            message: Raw bytes message
+        
+        Returns:
+            str: UTF-8 decoded string or base64 encoded string if UTF-8 decoding fails
+        """
+        try:
+            # Calculate max message size accounting for CloudWatch overhead
+            max_size = CloudWatchLogStorage.MESSAGE_MAX_SIZE - CloudWatchLogStorage.MESSAGE_OVERHEAD_SIZE
+            
+            # Try UTF-8 decode first
+            decoded = message.decode('utf-8')
+            if len(decoded.encode('utf-8')) > max_size:
+                # Truncate and indicate truncation
+                truncated = decoded.encode('utf-8')[:max_size-3].decode('utf-8', errors='ignore') + '...'
+                return truncated
+            return decoded
+            
+        except UnicodeDecodeError:
+            # Only base64 encode if UTF-8 decoding fails
+            logger.debug("Failed to decode message as UTF-8, falling back to base64 encoding")
+            encoded = base64.b64encode(message).decode()
+            if len(encoded) > max_size:
+                return encoded[:max_size-3] + '...'
+            return encoded
 
     @contextmanager
     def _wrap_boto_errors(self) -> Iterator[None]:
@@ -442,6 +473,15 @@ def _datetime_to_unix_time_ms(dt: datetime) -> int:
 
 def _b64encode_raw_message(message: bytes) -> str:
     return base64.b64encode(message).decode()
+
+
+def _decode_or_encode_message(message: bytes) -> str:
+    try:
+        # Keep readable text as-is for better CloudWatch console experience
+        return message.decode('utf-8')
+    except UnicodeDecodeError:
+        # Only encode actual binary data
+        return f"base64:{_b64encode_raw_message(message)}"
 
 
 _default_log_storage: Optional[LogStorage] = None
