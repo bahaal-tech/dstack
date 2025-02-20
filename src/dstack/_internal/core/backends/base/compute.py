@@ -339,16 +339,17 @@ def get_docker_commands(
     runner = "/usr/local/bin/dstack-runner"
 
     build = get_dstack_runner_version()
-    bucket = "dstack-runner-downloads-stgn"
-    if settings.DSTACK_VERSION is not None:
-        bucket = "dstack-runner-downloads"
+    # bucket = "dstack-runner-downloads-stgn"
+    # if settings.DSTACK_VERSION is not None:
+    bucket = "dstack-runner-downloads"
 
     url = f"https://{bucket}.s3.eu-west-1.amazonaws.com/{build}/binaries/dstack-runner-linux-amd64"
+    print(url)
 
     commands += [
         f"curl --connect-timeout 60 --max-time 240 --retry 1 --output {runner} {url}",
         f"chmod +x {runner}",
-        f"{runner} --log-level 6 start --http-port 10999 --temp-dir /tmp/runner --home-dir /root --working-dir /workflow",
+        f"{runner} --log-level 6 start --http-port 10999 --ssh-port 10022 --temp-dir /tmp/runner --home-dir /root --working-dir /workflow",
     ]
     return commands
 
@@ -423,3 +424,4 @@ def merge_tags(tags: Dict[str, str], backend_tags: Optional[Dict[str, str]]) -> 
         for k, v in backend_tags.items():
             res.setdefault(k, v)
     return res
+
