@@ -270,8 +270,8 @@ class CloudWatchLogStorage(LogStorage):
     ) -> _CloudWatchLogEvent:
         return {
             "timestamp": runner_log_event.timestamp,
-            "message": b64encode_raw_message(runner_log_event.message),
-            # "message": decode_or_encode_message(runner_log_event.message),
+            # "message": b64encode_raw_message(runner_log_event.message),
+            "message": self._decode_or_encode_message(runner_log_event.message),
         }
 
     def _decode_or_encode_message(message: bytes) -> str:
