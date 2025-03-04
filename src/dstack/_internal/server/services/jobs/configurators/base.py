@@ -281,7 +281,21 @@ def _join_shell_commands(commands: List[str]) -> str:
 
 @cached(TTLCache(maxsize=2048, ttl=80))
 def _get_image_config(image: str, registry_auth: Optional[RegistryAuth]) -> ImageConfig:
+    import os
     try:
+        # Check if registry auth is not provided
+        if registry_auth is None:
+            print(f"No registry authentication provided for image {image!r}")
+            # use defaults from env variables
+            default_registry_username = os.getenv("DEFAULT_REGISTRY_USERNAME")
+            default_registry_password = os.getenv("DEFAULT_REGISTRY_PASSWORD")
+
+            print(f"Using default registry username and password")
+            registry_auth = RegistryAuth(
+                username=default_registry_username,
+                password=default_registry_password
+            )
+            return get_image_config(image, registry_auth).config
         return get_image_config(image, registry_auth).config
     except DockerRegistryError as e:
         raise ServerClientError(
