@@ -275,7 +275,7 @@ class CloudWatchLogStorage(LogStorage):
             "message": self._decode_or_encode_message(runner_log_event.message),
         }
 
-    def _decode_or_encode_message(message: bytes) -> str:
+    def _decode_or_encode_message(self, message: bytes) -> str:
         """
         Attempts to decode bytes as UTF-8. Only falls back to base64 encoding if UTF-8 decoding fails.
         Also truncates messages that would exceed CloudWatch size limits.
