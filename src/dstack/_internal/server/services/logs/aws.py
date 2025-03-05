@@ -300,7 +300,7 @@ class CloudWatchLogStorage(LogStorage):
         except UnicodeDecodeError:
             # Only base64 encode if UTF-8 decoding fails
             logger.debug("Failed to decode message as UTF-8, falling back to base64 encoding")
-            encoded = base64.b64encode(message).decode()
+            encoded = b64encode_raw_message(message)
             if len(encoded) > max_size:
                 return encoded[:max_size-3] + '...'
             return encoded
