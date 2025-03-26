@@ -498,7 +498,7 @@ def get_docker_commands(
             f" --ssh-port {DSTACK_RUNNER_SSH_PORT}"
             " --temp-dir /tmp/runner"
             " --home-dir /root"
-            " --working-dir /workflow"
+            " --working-dir /app"
         ),
     ]
 
