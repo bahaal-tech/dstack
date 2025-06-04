@@ -139,6 +139,10 @@ class RunpodCompute(
         container_registry_auth_id = self._generate_container_registry_auth_id(
             job.job_spec.registry_auth
         )
+
+        if container_registry_auth_id is None:
+            container_registry_auth_id = job.job_spec.env.get("runpod_container_registry_auth_id")
+
         gpu_count = len(instance_offer.instance.resources.gpus)
         bid_per_gpu = None
         if instance_offer.instance.resources.spot and gpu_count:
