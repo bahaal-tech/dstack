@@ -4,6 +4,7 @@ from collections.abc import Generator, Iterable
 from datetime import timezone
 from typing import ClassVar
 from uuid import UUID
+import json
 
 from prometheus_client import Metric
 from prometheus_client.parser import text_string_to_metric_families
@@ -177,6 +178,22 @@ async def get_job_metrics(session: AsyncSession) -> Iterable[Metric]:
             metrics.add_sample(_JOB_CPU_TIME, labels, jmp.cpu_usage_micro / 1_000_000)
             metrics.add_sample(_JOB_MEMORY_USAGE, labels, jmp.memory_usage_bytes)
             metrics.add_sample(_JOB_MEMORY_WORKING_SET, labels, jmp.memory_working_set_bytes)
+            
+            # Decode JSON arrays for GPU metrics
+            gpus_memory_usage = json.loads(jmp.gpus_memory_usage_bytes)
+            gpus_util = json.loads(jmp.gpus_util_percent)
+            
+            # Add metrics for each GPU
+            for i, (gpu_memory, gpu_util) in enumerate(zip(gpus_memory_usage, gpus_util)):
+                # Create GPU-specific labels
+                gpu_labels = labels.copy()
+                gpu_labels["dstack_gpu_index"] = str(i)
+                if i < len(gpus):
+                    gpu_labels["dstack_gpu"] = gpus[i].name
+                
+                # Add GPU-specific metrics
+                metrics.add_sample(_JOB_GPU_UTILIZATION, gpu_labels, gpu_util)
+                metrics.add_sample(_JOB_GPU_MEMORY_USAGE, gpu_labels, gpu_memory)
         jpm = job_prometheus_metrics.get(job.id)
         if jpm is not None:
             for metric in text_string_to_metric_families(jpm.text):
@@ -202,6 +219,8 @@ _JOB_CPU_TIME = "dstack_job_cpu_time_seconds_total"
 _JOB_MEMORY_TOTAL = "dstack_job_memory_total_bytes"
 _JOB_MEMORY_USAGE = "dstack_job_memory_usage_bytes"
 _JOB_MEMORY_WORKING_SET = "dstack_job_memory_working_set_bytes"
+_JOB_GPU_UTILIZATION = "dstack_job_gpu_utilization"
+_JOB_GPU_MEMORY_USAGE = "dstack_job_gpu_memory_usage_bytes"
 
 
 class _Metrics(dict[str, Metric]):
@@ -259,6 +278,8 @@ class _JobMetrics(_Metrics):
         (_JOB_MEMORY_TOTAL, _GAUGE, "Total memory allocated for the job, bytes"),
         (_JOB_MEMORY_USAGE, _GAUGE, "Memory used by the job (including cache), bytes"),
         (_JOB_MEMORY_WORKING_SET, _GAUGE, "Memory used by the job (not including cache), bytes"),
+        (_JOB_GPU_UTILIZATION, _GAUGE, "GPU utilization percentage"),
+        (_JOB_GPU_MEMORY_USAGE, _GAUGE, "GPU memory usage in bytes"),
     ]
 
 
