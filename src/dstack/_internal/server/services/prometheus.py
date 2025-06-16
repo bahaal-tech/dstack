@@ -2,7 +2,7 @@ import itertools
 from collections import defaultdict
 from collections.abc import Generator, Iterable
 from datetime import timezone
-from typing import ClassVar
+from typing import ClassVar, Optional
 from uuid import UUID
 import json
 
@@ -178,7 +178,12 @@ async def get_job_metrics(session: AsyncSession) -> Iterable[Metric]:
             metrics.add_sample(_JOB_CPU_TIME, labels, jmp.cpu_usage_micro / 1_000_000)
             metrics.add_sample(_JOB_MEMORY_USAGE, labels, jmp.memory_usage_bytes)
             metrics.add_sample(_JOB_MEMORY_WORKING_SET, labels, jmp.memory_working_set_bytes)
-            metrics.add_sample(_JOB_CPU_UTILIZATION, labels, jmp.cpu_usage_micro)
+            
+            # Get previous point for CPU utilization calculation
+            prev_point = await _get_previous_metrics_point(session, job.id, jmp.timestamp_micro)
+            if prev_point is not None:
+                cpu_utilization = _get_cpu_usage(jmp, prev_point)
+                metrics.add_sample(_JOB_CPU_UTILIZATION, labels, cpu_utilization)
             
             # Decode JSON arrays for GPU metrics
             gpus_memory_usage = json.loads(jmp.gpus_memory_usage_bytes)
@@ -288,6 +293,7 @@ class _JobMetrics(_Metrics):
 async def _get_job_metrics_points(
     session: AsyncSession, job_ids: Iterable[UUID]
 ) -> dict[UUID, JobMetricsPoint]:
+    """Get the latest metrics point for each job."""
     subquery = select(
         JobMetricsPoint,
         func.row_number()
@@ -329,3 +335,28 @@ def _render_metrics(metrics: Iterable[Metric]) -> Generator[str, None, None]:
             if isinstance(sample.timestamp, float):
                 parts.append(f" {int(sample.timestamp * 1000)}")
             yield "".join(parts)
+
+
+async def _get_previous_metrics_point(
+    session: AsyncSession, 
+    job_id: UUID, 
+    current_timestamp_micro: int
+) -> Optional[JobMetricsPoint]:
+    """Get the metrics point just before the current one for CPU utilization calculation."""
+    res = await session.execute(
+        select(JobMetricsPoint)
+        .where(
+            JobMetricsPoint.job_id == job_id,
+            JobMetricsPoint.timestamp_micro < current_timestamp_micro
+        )
+        .order_by(JobMetricsPoint.timestamp_micro.desc())
+        .limit(1)
+    )
+    return res.scalar_one_or_none()
+
+
+def _get_cpu_usage(last_point: JobMetricsPoint, prev_point: JobMetricsPoint) -> int:
+    window = last_point.timestamp_micro - prev_point.timestamp_micro
+    if window == 0:
+        return 0
+    return round((last_point.cpu_usage_micro - prev_point.cpu_usage_micro) / window * 100)
