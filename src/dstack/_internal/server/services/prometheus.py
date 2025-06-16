@@ -178,6 +178,7 @@ async def get_job_metrics(session: AsyncSession) -> Iterable[Metric]:
             metrics.add_sample(_JOB_CPU_TIME, labels, jmp.cpu_usage_micro / 1_000_000)
             metrics.add_sample(_JOB_MEMORY_USAGE, labels, jmp.memory_usage_bytes)
             metrics.add_sample(_JOB_MEMORY_WORKING_SET, labels, jmp.memory_working_set_bytes)
+            metrics.add_sample(_JOB_CPU_USAGE, labels, jmp.cpu_usage_micro)
             
             # Get previous point for CPU utilization calculation
             prev_point = await _get_previous_metrics_point(session, job.id, jmp.timestamp_micro)
@@ -228,6 +229,7 @@ _JOB_MEMORY_WORKING_SET = "dstack_job_memory_working_set_bytes"
 _JOB_GPU_UTILIZATION = "dstack_job_gpu_utilization"
 _JOB_GPU_MEMORY_USAGE = "dstack_job_gpu_memory_usage_bytes"
 _JOB_CPU_UTILIZATION = "dstack_job_cpu_utilization"
+_JOB_CPU_USAGE = "dstack_job_cpu_usage_micro"
 
 class _Metrics(dict[str, Metric]):
     metrics: ClassVar[list[tuple[str, str, str]]]
@@ -287,6 +289,7 @@ class _JobMetrics(_Metrics):
         (_JOB_GPU_UTILIZATION, _GAUGE, "GPU utilization percentage"),
         (_JOB_GPU_MEMORY_USAGE, _GAUGE, "GPU memory usage in bytes"),
         (_JOB_CPU_UTILIZATION, _GAUGE, "CPU utilization percentage"),
+        (_JOB_CPU_USAGE, _COUNTER, "Raw CPU usage in microseconds"),
     ]
 
 
