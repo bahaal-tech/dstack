@@ -1,8 +1,9 @@
 import itertools
+import json
 from collections import defaultdict
 from collections.abc import Generator, Iterable
 from datetime import timezone
-from typing import ClassVar
+from typing import ClassVar, Optional
 from uuid import UUID
 
 from prometheus_client import Metric
@@ -177,6 +178,29 @@ async def get_job_metrics(session: AsyncSession) -> Iterable[Metric]:
             metrics.add_sample(_JOB_CPU_TIME, labels, jmp.cpu_usage_micro / 1_000_000)
             metrics.add_sample(_JOB_MEMORY_USAGE, labels, jmp.memory_usage_bytes)
             metrics.add_sample(_JOB_MEMORY_WORKING_SET, labels, jmp.memory_working_set_bytes)
+            metrics.add_sample(_JOB_CPU_USAGE, labels, jmp.cpu_usage_micro)
+
+            # Get previous point for CPU utilization calculation
+            prev_point = await _get_previous_metrics_point(session, job.id, jmp.timestamp_micro)
+            if prev_point is not None:
+                cpu_utilization = _get_cpu_usage(jmp, prev_point)
+                metrics.add_sample(_JOB_CPU_UTILIZATION, labels, cpu_utilization)
+
+            # Decode JSON arrays for GPU metrics
+            gpus_memory_usage = json.loads(jmp.gpus_memory_usage_bytes)
+            gpus_util = json.loads(jmp.gpus_util_percent)
+
+            # Add metrics for each GPU
+            for i, (gpu_memory, gpu_util) in enumerate(zip(gpus_memory_usage, gpus_util)):
+                # Create GPU-specific labels
+                gpu_labels = labels.copy()
+                gpu_labels["dstack_gpu_index"] = str(i)
+                if i < len(gpus):
+                    gpu_labels["dstack_gpu"] = gpus[i].name
+
+                # Add GPU-specific metrics
+                metrics.add_sample(_JOB_GPU_UTILIZATION, gpu_labels, gpu_util)
+                metrics.add_sample(_JOB_GPU_MEMORY_USAGE, gpu_labels, gpu_memory)
         jpm = job_prometheus_metrics.get(job.id)
         if jpm is not None:
             for metric in text_string_to_metric_families(jpm.text):
@@ -202,6 +226,10 @@ _JOB_CPU_TIME = "dstack_job_cpu_time_seconds_total"
 _JOB_MEMORY_TOTAL = "dstack_job_memory_total_bytes"
 _JOB_MEMORY_USAGE = "dstack_job_memory_usage_bytes"
 _JOB_MEMORY_WORKING_SET = "dstack_job_memory_working_set_bytes"
+_JOB_GPU_UTILIZATION = "dstack_job_gpu_utilization"
+_JOB_GPU_MEMORY_USAGE = "dstack_job_gpu_memory_usage_bytes"
+_JOB_CPU_UTILIZATION = "dstack_job_cpu_utilization"
+_JOB_CPU_USAGE = "dstack_job_cpu_usage_micro"
 
 
 class _Metrics(dict[str, Metric]):
@@ -259,12 +287,17 @@ class _JobMetrics(_Metrics):
         (_JOB_MEMORY_TOTAL, _GAUGE, "Total memory allocated for the job, bytes"),
         (_JOB_MEMORY_USAGE, _GAUGE, "Memory used by the job (including cache), bytes"),
         (_JOB_MEMORY_WORKING_SET, _GAUGE, "Memory used by the job (not including cache), bytes"),
+        (_JOB_GPU_UTILIZATION, _GAUGE, "GPU utilization percentage"),
+        (_JOB_GPU_MEMORY_USAGE, _GAUGE, "GPU memory usage in bytes"),
+        (_JOB_CPU_UTILIZATION, _GAUGE, "CPU utilization percentage"),
+        (_JOB_CPU_USAGE, _COUNTER, "Raw CPU usage in microseconds"),
     ]
 
 
 async def _get_job_metrics_points(
     session: AsyncSession, job_ids: Iterable[UUID]
 ) -> dict[UUID, JobMetricsPoint]:
+    """Get the latest metrics point for each job."""
     subquery = select(
         JobMetricsPoint,
         func.row_number()
@@ -306,3 +339,26 @@ def _render_metrics(metrics: Iterable[Metric]) -> Generator[str, None, None]:
             if isinstance(sample.timestamp, float):
                 parts.append(f" {int(sample.timestamp * 1000)}")
             yield "".join(parts)
+
+
+async def _get_previous_metrics_point(
+    session: AsyncSession, job_id: UUID, current_timestamp_micro: int
+) -> Optional[JobMetricsPoint]:
+    """Get the metrics point just before the current one for CPU utilization calculation."""
+    res = await session.execute(
+        select(JobMetricsPoint)
+        .where(
+            JobMetricsPoint.job_id == job_id,
+            JobMetricsPoint.timestamp_micro < current_timestamp_micro,
+        )
+        .order_by(JobMetricsPoint.timestamp_micro.desc())
+        .limit(1)
+    )
+    return res.scalar_one_or_none()
+
+
+def _get_cpu_usage(last_point: JobMetricsPoint, prev_point: JobMetricsPoint) -> int:
+    window = last_point.timestamp_micro - prev_point.timestamp_micro
+    if window == 0:
+        return 0
+    return round((last_point.cpu_usage_micro - prev_point.cpu_usage_micro) / window * 100)
