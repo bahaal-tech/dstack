@@ -28,7 +28,7 @@ const (
 	RunnerHomeDir = "/root"
 )
 
-const LegacyRepoDir = "/workflow"
+const LegacyRepoDir = "/app"
 
 const (
 	RunnerHTTPPort = 10999
